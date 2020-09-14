@@ -16,8 +16,7 @@ import imp
 imp.reload(dynlist) 
 
 # The path to the goddard folder in the sm64 source repo 
-GODDARD_FILE_PATH = "C:/Users/Student/Downloads/sm64pcbuilder2/Render96ex-master/src/goddard/dynlists/"
-
+GODDARD_FILE_PATH = "C:/Path to src/src/goddard/dynlists/"
 bpy.ops.object.select_all(action='DESELECT')
 
 #print('\033c')
@@ -184,6 +183,7 @@ def load_dynlist(filepath, vertex_data, face_data):
 
 
 def load_data_from_master_list(filepath, objects):
+    
     file = open(filepath)
     try:
         text = file.read()
@@ -198,50 +198,100 @@ def load_data_from_master_list(filepath, objects):
         dynlist = re.sub(r"([a-wyzA-WYZ_][a-wyzA-WYZ_0-9]{3,100})", r"'\1'", dynlist, 0)
         dynlist = dynlist.replace(",\n", "),\n").replace("\n'", "\n('")
         dynlist = ast.literal_eval(dynlist)
-        print(dynlist)
+        
+        mesh_weights = {}
+        curr_mesh = 0
+        curr_bone = 0
+        curr_weights = []
+        
+        def remove_empty_weights():
+            nonlocal curr_bone
+            if len(curr_weights) == 0 and curr_bone != 0:
+                mesh_weights[curr_mesh].pop(curr_bone)
+                curr_bone = 0
+        
+        for command, params in dynlist:
+            if command == "SetSkinShape":
+                remove_empty_weights()
+                mesh_weights.setdefault(params, {})
+                curr_mesh = params
+            elif command == "AttachNetToJoint":
+                remove_empty_weights()
+                curr_weights = mesh_weights[curr_mesh].setdefault(params[1], [])
+                curr_bone = params[1]
+            elif command == "SetSkinWeight":
+                curr_weights.append((params[0], params[1] / 100.0))
+        remove_empty_weights()
+        
+        bone_id_map = {
+            0xD7: "eye.L", 0xCE: "eye.R",
+            0xC5: "face?", 0xC2: "jaw",
+            0xB9: "nose", 0xB0: "ear.L",
+            0xA7: "ear.R", 0x9E: "cheek.L",
+            0x95: "cheek.R", 0x8C: "upper_lip",
+            0x83: "forehead", 0x6A: "root?",
+            0x0F: "mustache.L", 0x06: "mustache.R",
+            0x53: "eyebrow.L.L", 0x4A: "eyebrow.R.L",
+            0x41: "eyebrow.L", 0x31: "eyebrow.R.R",
+            0x28: "eyebrow.L.R", 0x1F: "eyebrow.R"
+        }
+        obj_id_map = {
+            "face": 0xE1, "eyebrow.L": 0x3B,
+            "eyebrow.R": 0x5D, "mustache": 0x19
+        }
+
+        for obj, id in obj_id_map.items():
+            for name, weights in mesh_weights[id].items():
+                vert_group = objects[obj].vertex_groups.new(name = bone_id_map[name])
+                for index, weight in weights:
+                    vert_group.add([index], weight, "REPLACE")
+            
     finally:
         file.close()
 
 
 mario_objects = {
-#    "face": load_dynlist(
-#        GODDARD_FILE_PATH + "dynlist_mario_face.c",
-#        "mario_Face_VtxData[VTX_NUM][3]",
-#        "mario_Face_FaceData[FACE_NUM][4]"
-#    ),
-#    "eyebrow.L": load_dynlist(
-#        GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c",
-#        "verts_mario_eyebrow_left[VTX_NUM][3]",
-#        "facedata_mario_eyebrow_left[FACE_NUM][4]"
-#    ),
-#    "eyebrow.R": load_dynlist(
-#        GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c",
-#        "verts_mario_eyebrow_right[VTX_NUM][3]",
-#        "facedata_mario_eyebrow_right[FACE_NUM][4]"
-#    ),
-#    "mustache": load_dynlist(
-#        GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c",
-#        "verts_mario_mustache[VTX_NUM][3]",
-#        "facedata_mario_mustache[FACE_NUM][4]"
-#    ),
-#    "eye.L": load_dynlist(
-#        GODDARD_FILE_PATH + "dynlists_mario_eyes.c",
-#        "verts_mario_eye_left[VTX_NUM][3]",
-#        "facedata_mario_eye_left[FACE_NUM][4]"
-#    ),
-#    "eye.R": load_dynlist(
-#        GODDARD_FILE_PATH + "dynlists_mario_eyes.c",
-#        "verts_mario_eye_right[VTX_NUM][3]",
-#        "facedata_mario_eye_right[FACE_NUM][4]"
-#    )
+    "face": load_dynlist(
+        GODDARD_FILE_PATH + "dynlist_mario_face.c",
+        "mario_Face_VtxData[VTX_NUM][3]",
+        "mario_Face_FaceData[FACE_NUM][4]"
+    ),
+    "eyebrow.L": load_dynlist(
+        GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c",
+        "verts_mario_eyebrow_left[VTX_NUM][3]",
+        "facedata_mario_eyebrow_left[FACE_NUM][4]"
+    ),
+    "eyebrow.R": load_dynlist(
+        GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c",
+        "verts_mario_eyebrow_right[VTX_NUM][3]",
+        "facedata_mario_eyebrow_right[FACE_NUM][4]"
+    ),
+    "mustache": load_dynlist(
+        GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c",
+        "verts_mario_mustache[VTX_NUM][3]",
+        "facedata_mario_mustache[FACE_NUM][4]"
+    ),
+    "eye.L": load_dynlist(
+        GODDARD_FILE_PATH + "dynlists_mario_eyes.c",
+        "verts_mario_eye_left[VTX_NUM][3]",
+        "facedata_mario_eye_left[FACE_NUM][4]"
+    ),
+    "eye.R": load_dynlist(
+        GODDARD_FILE_PATH + "dynlists_mario_eyes.c",
+        "verts_mario_eye_right[VTX_NUM][3]",
+        "facedata_mario_eye_right[FACE_NUM][4]"
+    )
 }
+
+
+load_data_from_master_list(GODDARD_FILE_PATH + "dynlist_mario_master.c", mario_objects)
 
 for name, obj in mario_objects.items():
     obj.name = name
 
-load_data_from_master_list(GODDARD_FILE_PATH + "dynlist_mario_master.c", mario_objects)
-
 head = bpy.data.objects.new("Mario Head", None)
+head.empty_display_type = "SPHERE"
+head.empty_display_size = 2.2
 bpy.context.collection.objects.link(head)
 head.select_set(True)
 bpy.context.view_layer.objects.active = head

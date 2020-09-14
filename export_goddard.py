@@ -2,8 +2,8 @@ import bpy
 import sys
 import re
 
-# The file path to the sm64 source repo
-sm64_file_path = "C:/Path to sm64 src"
+# The file path to the sm64 source repo2
+sm64_file_path = "C:/Path to src"
 
 def load_dynlist(filepath):
     text = ""
@@ -21,7 +21,7 @@ def modify_dynlist(dynlist, object, vert_data_name, face_data_name, list_data_na
     # get a triangulated version of the object's mesh 
     tri_mod = object.modifiers.new("triangulate", "TRIANGULATE")
     mesh = object.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh()
-    object.modifiers.remove(tri_mod)
+#    object.modifiers.remove(tri_mod)
 
     # insert vertex data into file
     dynlist = re.sub(r"#define VTX_NUM (.*?)\n", "#define VTX_NUM " + str(len(mesh.vertices.values())) + " \n", dynlist, 1)
@@ -171,6 +171,11 @@ brow_stache_dynlists = "\n".join(brow_stache_dynlists)
 src_head_file = open(sm64_file_path+"/src/goddard/dynlists/dynlists.h", "r")
 header = src_head_file.read()
 header = re.sub(r"(dynlist_mario_face)\[(.+?)\]", r"\1["+str(12+len(goddard_meshes["face"].material_slots)*4)+"]", header)
+header = re.sub(r"(dynlists_mario_eye_right)\[(.+?)\]", r"\1["+str(12+len(goddard_meshes["eye.R"].material_slots)*4)+"]", header)
+header = re.sub(r"(dynlists_mario_eye_left)\[(.+?)\]", r"\1["+str(12+len(goddard_meshes["eye.L"].material_slots)*4)+"]", header)
+header = re.sub(r"(dynlists_mario_eyebrow_right)\[(.+?)\]", r"\1["+str(12+len(goddard_meshes["eyebrow.R"].material_slots)*4)+"]", header)
+header = re.sub(r"(dynlists_mario_eyebrow_left)\[(.+?)\]", r"\1["+str(12+len(goddard_meshes["eyebrow.L"].material_slots)*4)+"]", header)
+header = re.sub(r"(dynlists_mario_mustache)\[(.+?)\]", r"\1["+str(12+len(goddard_meshes["mustache"].material_slots)*4)+"]", header)
 
 dest_head_file = open(sm64_file_path+"/dynlists.h", "w")
 dest_head_file.write(header)
