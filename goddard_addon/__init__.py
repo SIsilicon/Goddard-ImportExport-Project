@@ -1,6 +1,8 @@
 bl_info = {
     "name": "SM64 Goddard Editor Addon",
+    "author": "SI Silicon",
     "blender": (2, 90, 0),
+    "location": "View3D > Goddard",
     "category": "Object",
 }
 
@@ -9,14 +11,15 @@ import sys
 import os
 import imp
 
-dir = os.path.dirname(bpy.data.filepath)
-if not dir in sys.path:
-    sys.path.append(dir )
+debug = __name__ == "__main__"
 
-import import_goddard
-imp.reload(import_goddard)
-import export_goddard
-imp.reload(export_goddard)
+if debug:
+    dir = os.path.dirname(bpy.data.filepath)
+    if not dir in sys.path:
+        sys.path.append(dir )
+
+from src import import_goddard
+from src import export_goddard
 
 from bpy.props import (StringProperty, PointerProperty, BoolProperty)
 
@@ -43,6 +46,7 @@ class GoddardProperties(PropertyGroup):
 class ImportGoddard(Operator):
     bl_label = "Import Goddard from SM64"
     bl_idname = "gd.import_goddard"
+    bl_description = "Import the goddard head from the source code.\nDo this to get a base for editing."
 
     def execute(self, context):
         return import_goddard.execute(self, context)
@@ -51,6 +55,7 @@ class ImportGoddard(Operator):
 class ExportGoddard(Operator):
     bl_label = "Export Goddard to SM64"
     bl_idname = "gd.export_goddard"
+    bl_description = "Export the head to a goddard folder in the root of the SM64 folder.\nYou must then apply it by moving said folder into the `src` folder."
 
     def execute(self, context):
         return export_goddard.exceute(self, context)
@@ -96,5 +101,5 @@ def unregister():
 
 # This allows you to run the script directly from Blender's Text editor
 # to test the add-on without having to install it.
-if __name__ == "__main__":
+if debug:
     register()

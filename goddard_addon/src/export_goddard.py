@@ -161,8 +161,8 @@ def modify_master_dynlist(dynlist, objects):
             
             for j, vert in enumerate(current_object.data.vertices):
                 for grp in vert.groups:
-                    if grp.group == vert_group_index and grp.weight != 0.0: 
-                        sublist.append(["SetSkinWeight", (j, round(grp.weight * 100.0, 3))])
+                    if grp.group == vert_group_index:# and grp.weight != 0.0: 
+                        sublist.append(["SetSkinWeight", (j, grp.weight * 100.0)])
                         weight_end += 1
             dynlist[weight_begin:weight_begin] = sublist
             
