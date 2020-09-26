@@ -16,11 +16,14 @@ debug = __name__ == "__main__"
 if debug:
     dir = os.path.dirname(bpy.data.filepath)
     if not dir in sys.path:
-        sys.path.append(dir )
+        sys.path.append(dir)
 
-from src import import_goddard
-from src import export_goddard
+from . import import_goddard
+from . import export_goddard
 
+imp.reload(import_goddard)
+imp.reload(export_goddard)
+    
 from bpy.props import (StringProperty, PointerProperty, BoolProperty)
 
 from bpy.types import (
