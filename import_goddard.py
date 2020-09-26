@@ -5,63 +5,16 @@ import math
 import sys
 import re
 
-dir = os.path.dirname(bpy.data.filepath)
-if not dir in sys.path:
-    sys.path.append(dir)
-import dynlist
-import dynlist_classes
-from dynlist_classes import *
-
-import imp
-imp.reload(dynlist) 
-
-# The path to the goddard folder in the sm64 source repo 
-GODDARD_FILE_PATH = "C:/Path to src/src/goddard/dynlists/"
-bpy.ops.object.select_all(action='DESELECT')
-
-#print('\033c')
-
-#dynlist.custom_data['dynlist_mario_face'] = dynlist.LoadList(GODDARD_FILE_PATH + "dynlist_mario_face.c", "dynlist_mario_face")
-#dynlist.custom_data['dynlist_mario_eye_right'] = dynlist.LoadList(GODDARD_FILE_PATH + "dynlists_mario_eyes.c", "dynlist_mario_eye_right")
-#dynlist.custom_data['dynlist_mario_eye_left'] = dynlist.LoadList(GODDARD_FILE_PATH + "dynlists_mario_eyes.c", "dynlist_mario_eye_left")
-#dynlist.custom_data['dynlist_mario_eyebrow_right'] = dynlist.LoadList(GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c", "dynlist_mario_eyebrow_right")
-#dynlist.custom_data['dynlist_mario_eyebrow_left'] = dynlist.LoadList(GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c", "dynlist_mario_eyebrow_right")
-#dynlist.custom_data['dynlist_mario_mustache'] = dynlist.LoadList(GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c", "dynlist_mario_mustache")
-
-#dynlist.custom_data['gShapeSilverStar'] = None
-#dynlist.custom_data['gShapeRedStar'] = None
-
-#dynlist.custom_data['mario_Face_VtxInfo'] = GdVtxData(0, 0x1, [])
-#dynlist.custom_data['mario_Face_FaceInfo'] = GdFaceData(0, 0x1, [])
-
-#dynlist.custom_data['vtx_mario_eye_right'] = GdVtxData(0, 0x1, [])
-#dynlist.custom_data['faces_mario_eye_right'] = GdFaceData(0, 0x1, [])
-#dynlist.custom_data['vtx_mario_eye_left'] = GdVtxData(0, 0x1, [])
-#dynlist.custom_data['faces_mario_eye_left'] = GdFaceData(0, 0x1, [])
-
-#dynlist.custom_data['vtx_mario_eyebrow_right'] = GdVtxData(0, 0x1, [])
-#dynlist.custom_data['faces_mario_eyebrow_right'] = GdFaceData(0, 0x1, [])
-#dynlist.custom_data['vtx_mario_eyebrow_left'] = GdVtxData(0, 0x1, [])
-#dynlist.custom_data['faces_mario_eyebrow_left'] = GdFaceData(0, 0x1, [])
-
-#dynlist.custom_data['vtx_mario_mustache'] = GdVtxData(0, 0x1, [])
-#dynlist.custom_data['faces_mario_mustache'] = GdFaceData(0, 0x1, [])
-
-#dynlist.RunListFromFile(GODDARD_FILE_PATH + "dynlist_mario_master.c", "dynlist_mario_master")
-
-
 D_MATERIAL = bpy.types.Material
 D_LIGHT = bpy.types.Light
 
-
-#gShapeSilverStar = None
-#gShapeRedStar = None
-
-#id_database = {}
+id_database = {}
 
 current_mat = None
 current_object = None
 
+current_context = None
+vertex_count = 0
 
 def MakeDynObj(type, meta):
     global current_mat
@@ -72,9 +25,9 @@ def MakeDynObj(type, meta):
     elif type == D_LIGHT:
         current_mat = None
         current_object = bpy.data.objects.new("n64_light", bpy.data.lights.new(name = "Light", type = "POINT"))
-        bpy.context.collection.objects.link(current_object)
+        current_context.collection.objects.link(current_object)
         current_object.select_set(True)
-        bpy.context.view_layer.objects.active = current_object
+        current_context.view_layer.objects.active = current_object
 
 def SetId(id):
     global current_object
@@ -105,9 +58,12 @@ def SetFlag(null_arg):
 
 
 def load_dynlist(filepath, vertex_data, face_data):
-    file = open(filepath)
-    obj = 0
-    try:
+    global vertex_count
+    if not os.path.exists(filepath):
+        return None
+
+    obj = None
+    with open(filepath) as file:
         text = file.read()
         
         # Load vertices
@@ -118,6 +74,7 @@ def load_dynlist(filepath, vertex_data, face_data):
             arr_end1 = text.find("};", arr_start1) + 1
             v_l = text[arr_start1:arr_end1].replace("{", "[").replace("}", "]")
             vertex_list = ast.literal_eval(v_l)
+            vertex_count += len(vertex_list)
             vertex_list = [val for sublist in vertex_list for val in sublist]
             for idx, _ in enumerate(vertex_list):
                 vertex_list[idx] /= 212.77
@@ -154,9 +111,7 @@ def load_dynlist(filepath, vertex_data, face_data):
         mesh.polygons.foreach_set("material_index", mat_id_list)
         
         mesh.update()
-#        mesh.validate(verbose=True)
-        
-        print(len(mesh.polygons))
+        mesh.validate()
         
         # Create Object whose Object Data is our new mesh
         global current_object
@@ -171,21 +126,17 @@ def load_dynlist(filepath, vertex_data, face_data):
             exec(dynlist)
         
         # Add Object to the scene
-        bpy.context.collection.objects.link(obj)
+        current_context.collection.objects.link(obj)
 
         obj.select_set(True)
         bpy.ops.object.shade_smooth()
-        bpy.context.view_layer.objects.active = obj
-    finally:
-        file.close()
+        current_context.view_layer.objects.active = obj
     
     return obj
 
 
 def load_data_from_master_list(filepath, objects):
-    
-    file = open(filepath)
-    try:
+    with open(filepath) as file:
         text = file.read()
         arr_start = text.find("{")
         arr_end = text.find("}") + 1
@@ -245,54 +196,72 @@ def load_data_from_master_list(filepath, objects):
                 vert_group = objects[obj].vertex_groups.new(name = bone_id_map[name])
                 for index, weight in weights:
                     vert_group.add([index], weight, "REPLACE")
-            
-    finally:
-        file.close()
 
 
-mario_objects = {
-    "face": load_dynlist(
-        GODDARD_FILE_PATH + "dynlist_mario_face.c",
-        "mario_Face_VtxData[VTX_NUM][3]",
-        "mario_Face_FaceData[FACE_NUM][4]"
-    ),
-    "eyebrow.L": load_dynlist(
-        GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c",
-        "verts_mario_eyebrow_left[VTX_NUM][3]",
-        "facedata_mario_eyebrow_left[FACE_NUM][4]"
-    ),
-    "eyebrow.R": load_dynlist(
-        GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c",
-        "verts_mario_eyebrow_right[VTX_NUM][3]",
-        "facedata_mario_eyebrow_right[FACE_NUM][4]"
-    ),
-    "mustache": load_dynlist(
-        GODDARD_FILE_PATH + "dynlists_mario_eyebrows_mustache.c",
-        "verts_mario_mustache[VTX_NUM][3]",
-        "facedata_mario_mustache[FACE_NUM][4]"
-    ),
-    "eye.L": load_dynlist(
-        GODDARD_FILE_PATH + "dynlists_mario_eyes.c",
-        "verts_mario_eye_left[VTX_NUM][3]",
-        "facedata_mario_eye_left[FACE_NUM][4]"
-    ),
-    "eye.R": load_dynlist(
-        GODDARD_FILE_PATH + "dynlists_mario_eyes.c",
-        "verts_mario_eye_right[VTX_NUM][3]",
-        "facedata_mario_eye_right[FACE_NUM][4]"
-    )
-}
+def execute(op, context):
+    global current_context, vertex_count
 
+    source_dir = bpy.path.abspath(context.scene.goddard.source_dir)
+    goddard_file_path = os.path.join(source_dir, "src\\goddard\\dynlists\\")
+    bpy.ops.object.select_all(action='DESELECT')
+    current_context = context
+    vertex_count = 0
 
-load_data_from_master_list(GODDARD_FILE_PATH + "dynlist_mario_master.c", mario_objects)
+    if not os.path.exists(source_dir):
+        op.report({'ERROR'}, "The source directory does not exist!")
+        return {'CANCELLED'}
+    
+    mario_objects = {
+        "face": load_dynlist(
+            os.path.join(goddard_file_path, "dynlist_mario_face.c"),
+            "mario_Face_VtxData[VTX_NUM][3]",
+            "mario_Face_FaceData[FACE_NUM][4]"
+        ),
+        "eyebrow.L": load_dynlist(
+            os.path.join(goddard_file_path, "dynlists_mario_eyebrows_mustache.c"),
+            "verts_mario_eyebrow_left[VTX_NUM][3]",
+            "facedata_mario_eyebrow_left[FACE_NUM][4]"
+        ),
+        "eyebrow.R": load_dynlist(
+            os.path.join(goddard_file_path, "dynlists_mario_eyebrows_mustache.c"),
+            "verts_mario_eyebrow_right[VTX_NUM][3]",
+            "facedata_mario_eyebrow_right[FACE_NUM][4]"
+        ),
+        "mustache": load_dynlist(
+            os.path.join(goddard_file_path, "dynlists_mario_eyebrows_mustache.c"),
+            "verts_mario_mustache[VTX_NUM][3]",
+            "facedata_mario_mustache[FACE_NUM][4]"
+        ),
+        "eye.L": load_dynlist(
+            os.path.join(goddard_file_path, "dynlists_mario_eyes.c"),
+            "verts_mario_eye_left[VTX_NUM][3]",
+            "facedata_mario_eye_left[FACE_NUM][4]"
+        ),
+        "eye.R": load_dynlist(
+            os.path.join(goddard_file_path, "dynlists_mario_eyes.c"),
+            "verts_mario_eye_right[VTX_NUM][3]",
+            "facedata_mario_eye_right[FACE_NUM][4]"
+        )
+    }
 
-for name, obj in mario_objects.items():
-    obj.name = name
+    if None in mario_objects.items():
+        op.report({'ERROR'}, "Dynlists could not be loaded!")
+        return {'CANCELLED'}
 
-head = bpy.data.objects.new("Mario Head", None)
-head.empty_display_type = "SPHERE"
-head.empty_display_size = 2.2
-bpy.context.collection.objects.link(head)
-head.select_set(True)
-bpy.context.view_layer.objects.active = head
-bpy.ops.object.parent_set()
+    load_data_from_master_list(os.path.join(goddard_file_path, "dynlist_mario_master.c"), mario_objects)
+
+    for name, obj in mario_objects.items():
+        obj.name = name
+
+    head = bpy.data.objects.new("Mario Head", None)
+    head.empty_display_type = "SPHERE"
+    head.empty_display_size = 2.2
+    context.collection.objects.link(head)
+    head.select_set(True)
+    context.view_layer.objects.active = head
+    bpy.ops.object.parent_set()
+
+    print(vertex_count)
+
+    return {'FINISHED'}
+
