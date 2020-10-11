@@ -3,6 +3,7 @@ import sys
 import re
 import ast
 import os
+from .dynlist_utils import tokenize_list
 
 # the file path to the sm64 source repo
 sm64_source_dir = ""
@@ -115,16 +116,7 @@ def modify_dynlist(dynlist, object, vert_data_name, face_data_name, list_data_na
 def modify_master_dynlist(dynlist, objects):
     original_list = dynlist[:]
     
-    arr_start = dynlist.find("{")
-    arr_end = dynlist.find("}") + 1
-    dynlist = dynlist[arr_start:arr_end]
-
-    dynlist = re.sub(r"//(.+?)\n", r"\n", dynlist, 0)
-    dynlist = dynlist.replace("{", "[").replace("}", "]")
-    dynlist = dynlist.replace("(", ", (").replace(" ", "")
-    dynlist = re.sub(r"([a-wyzA-WYZ_\&][a-wyzA-WYZ_0-9]{3,100})", r"'\1'", dynlist, 0)
-    dynlist = dynlist.replace(",\n", "],\n").replace("\n'", "\n['")
-    dynlist = ast.literal_eval(dynlist)
+    token_list = tokenize_list(dynlist)
     
     weight_id_map = {
         0xD7: "eye.L", 0xCE: "eye.R",
@@ -148,11 +140,11 @@ def modify_master_dynlist(dynlist, objects):
     object_weights = {}
     current_vert_group = None
     weight_begin, weight_end = -1, -1
-    while i < len(dynlist):
-        command, params = dynlist[i]
+    while i < len(token_list):
+        command, params = token_list[i]
         
         if command != "SetSkinWeight" and weight_begin != -1:
-            del dynlist[weight_begin:weight_end]
+            del token_list[weight_begin:weight_end]
             
             print(current_object.name, len(current_object.data.vertices))
             weight_end = weight_begin
@@ -161,10 +153,10 @@ def modify_master_dynlist(dynlist, objects):
             
             for j, vert in enumerate(current_object.data.vertices):
                 for grp in vert.groups:
-                    if grp.group == vert_group_index:# and grp.weight != 0.0: 
+                    if grp.group == vert_group_index and grp.weight != 0.0: 
                         sublist.append(["SetSkinWeight", (j, grp.weight * 100.0)])
                         weight_end += 1
-            dynlist[weight_begin:weight_begin] = sublist
+            token_list[weight_begin:weight_begin] = sublist
             
             i = weight_end + 1
             weight_begin = -1
@@ -186,7 +178,10 @@ def modify_master_dynlist(dynlist, objects):
             current_object = curr_context.view_layer.objects.active
             for mod in current_object.modifiers:
                 try:
-                    bpy.ops.object.modifier_apply(modifier=mod.name)
+                    if isinstance(mod, bpy.types.ArmatureModifier):
+                        bpy.ops.object.modifier_remove(modifier=mod.name)
+                    else:
+                        bpy.ops.object.modifier_apply(modifier=mod.name)
                 except RuntimeError:
                     bpy.ops.object.modifier_remove(modifier=mod.name)
             
@@ -211,18 +206,24 @@ def modify_master_dynlist(dynlist, objects):
         bpy.ops.object.delete()
     bpy.ops.outliner.orphans_purge()
     
-    list_string = "dynlist_mario_master["+str(len(dynlist))+"] = {\n"
-    for command, params in dynlist:
+    list_string = "dynlist_mario_master["+str(len(token_list))+"] = {\n"
+    indent = "    "
+    for command, params in token_list:
+        if command in ["EndGroup", "EndNetSubGroup"]:
+            indent = indent[:-4]
+        
         param_string = str(params).replace("'", "")
         if not type(params) is tuple:
             param_string = "(" + param_string + ")"
-        
-        list_string += "    " + command + param_string + ",\n"
+        list_string += indent + command + param_string + ",\n"
+
+        if command in ["StartGroup", "MakeNetWithSubGroup"]:
+            indent += "    "
     list_string += "};"
     
     list_string = re.sub(r"dynlist_mario_master\[(.+)};", list_string, original_list, 1, re.S)
     
-    return list_string, len(dynlist)
+    return list_string, len(token_list)
 
 def split_dynlists(dynlist):
     lists = []
@@ -338,11 +339,11 @@ def exceute(op, context):
         header = src_head_file.read()
         header = re.sub(r"(dynlist_mario_master)\[(.+?)\]", r"\1["+str(master_size)+"]", header)
         header = re.sub(r"(dynlist_mario_face)\[(.+?)\]", r"\1["+str(face_size)+"]", header)
-        header = re.sub(r"(dynlists_mario_eye_right)\[(.+?)\]", r"\1["+str(eye_size_r)+"]", header)
-        header = re.sub(r"(dynlists_mario_eye_left)\[(.+?)\]", r"\1["+str(eye_size_l)+"]", header)
-        header = re.sub(r"(dynlists_mario_eyebrow_right)\[(.+?)\]", r"\1["+str(eyebrow_size_r)+"]", header)
-        header = re.sub(r"(dynlists_mario_eyebrow_left)\[(.+?)\]", r"\1["+str(eyebrow_size_l)+"]", header)
-        header = re.sub(r"(dynlists_mario_mustache)\[(.+?)\]", r"\1["+str(mustache_size)+"]", header)
+        header = re.sub(r"(dynlist_mario_eye_right)\[(.+?)\]", r"\1["+str(eye_size_r)+"]", header)
+        header = re.sub(r"(dynlist_mario_eye_left)\[(.+?)\]", r"\1["+str(eye_size_l)+"]", header)
+        header = re.sub(r"(dynlist_mario_eyebrow_right)\[(.+?)\]", r"\1["+str(eyebrow_size_r)+"]", header)
+        header = re.sub(r"(dynlist_mario_eyebrow_left)\[(.+?)\]", r"\1["+str(eyebrow_size_l)+"]", header)
+        header = re.sub(r"(dynlist_mario_mustache)\[(.+?)\]", r"\1["+str(mustache_size)+"]", header)
 
         with open(sm64_source_dir+"/goddard/dynlists/dynlists.h", "w") as dest_head_file:
             dest_head_file.write(header)

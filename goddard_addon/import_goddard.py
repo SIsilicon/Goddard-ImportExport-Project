@@ -1,9 +1,11 @@
 import bpy
 import ast
 import os
-import math
 import sys
 import re
+import math
+from mathutils import Matrix, Vector, Euler
+from .dynlist_utils import tokenize_list
 
 D_MATERIAL = bpy.types.Material
 D_LIGHT = bpy.types.Light
@@ -16,6 +18,10 @@ current_object = None
 current_context = None
 vertex_count = 0
 
+def select_object(object):
+    object.select_set(True)
+    current_context.view_layer.objects.active = object
+
 def MakeDynObj(type, meta):
     global current_mat
     global current_object
@@ -26,8 +32,7 @@ def MakeDynObj(type, meta):
         current_mat = None
         current_object = bpy.data.objects.new("n64_light", bpy.data.lights.new(name = "Light", type = "POINT"))
         current_context.collection.objects.link(current_object)
-        current_object.select_set(True)
-        current_context.view_layer.objects.active = current_object
+        select_object(current_object)
 
 def SetId(id):
     global current_object
@@ -128,9 +133,8 @@ def load_dynlist(filepath, vertex_data, face_data):
         # Add Object to the scene
         current_context.collection.objects.link(obj)
 
-        obj.select_set(True)
+        select_object(obj)
         bpy.ops.object.shade_smooth()
-        current_context.view_layer.objects.active = obj
     
     return obj
 
@@ -138,42 +142,23 @@ def load_dynlist(filepath, vertex_data, face_data):
 def load_data_from_master_list(filepath, objects):
     with open(filepath) as file:
         text = file.read()
-        arr_start = text.find("{")
-        arr_end = text.find("}") + 1
-        dynlist = text[arr_start:arr_end]
-
-        dynlist = re.sub(r"//(.+?)\n", r"\n", dynlist, 0)
-        dynlist = dynlist.replace("{", "[").replace("}", "]")
-        dynlist = dynlist.replace("(", ", (")
-        dynlist = dynlist.replace("&", "").replace(" ", "")
-        dynlist = re.sub(r"([a-wyzA-WYZ_][a-wyzA-WYZ_0-9]{3,100})", r"'\1'", dynlist, 0)
-        dynlist = dynlist.replace(",\n", "),\n").replace("\n'", "\n('")
-        dynlist = ast.literal_eval(dynlist)
+        
+        dynlist = tokenize_list(text)
         
         mesh_weights = {}
-        curr_mesh = 0
-        curr_bone = 0
+        curr_armature = None
+        curr_mesh = None
+        curr_bone = None
+        curr_bone_idx = 0
         curr_weights = []
-        
-        def remove_empty_weights():
-            nonlocal curr_bone
-            if len(curr_weights) == 0 and curr_bone != 0:
-                mesh_weights[curr_mesh].pop(curr_bone)
-                curr_bone = 0
-        
-        for command, params in dynlist:
-            if command == "SetSkinShape":
-                remove_empty_weights()
-                mesh_weights.setdefault(params, {})
-                curr_mesh = params
-            elif command == "AttachNetToJoint":
-                remove_empty_weights()
-                curr_weights = mesh_weights[curr_mesh].setdefault(params[1], [])
-                curr_bone = params[1]
-            elif command == "SetSkinWeight":
-                curr_weights.append((params[0], params[1] / 100.0))
-        remove_empty_weights()
-        
+        curr_object = None
+
+        bone_armature_map = {}
+
+        obj_id_map = {
+            "face": 0xE1, "eyebrow.L": 0x3B,
+            "eyebrow.R": 0x5D, "mustache": 0x19
+        }
         bone_id_map = {
             0xD7: "eye.L", 0xCE: "eye.R",
             0xC5: "face?", 0xC2: "jaw",
@@ -186,14 +171,124 @@ def load_data_from_master_list(filepath, objects):
             0x41: "eyebrow.L", 0x31: "eyebrow.R.R",
             0x28: "eyebrow.L.R", 0x1F: "eyebrow.R"
         }
-        obj_id_map = {
-            "face": 0xE1, "eyebrow.L": 0x3B,
-            "eyebrow.R": 0x5D, "mustache": 0x19
-        }
 
+        def remove_empty_weights():
+            nonlocal curr_bone_idx
+            if len(curr_weights) == 0 and curr_bone_idx != 0:
+                mesh_weights[curr_mesh].pop(curr_bone_idx)
+                curr_bone_idx = 0
+        
+        def set_shape_pointer(armature, shape_obj):
+            for mod in shape_obj.modifiers:
+                if isinstance(mod, bpy.types.ArmatureModifier) and mod.object == armature:
+                    return
+
+            bpy.ops.object.select_all(action='DESELECT')
+            select_object(shape_obj)
+
+            bpy.ops.object.modifier_add(type='ARMATURE')
+            shape_obj.modifiers[-1].show_expanded = False
+            shape_obj.modifiers[-1].object = armature
+
+        for command, params in dynlist:
+            if (command == "MakeDynObj" and "D_NET" in params) or (command == "MakeNetWithSubGroup"):
+                curr_object = bpy.data.objects.new(hex(params[1]), bpy.data.armatures.new("n64_net"))
+                current_context.collection.objects.link(curr_object)
+                select_object(curr_object)
+                curr_object.show_in_front = True
+                objects[hex(params[1])] = curr_object
+                curr_armature = curr_object
+                objects[params[1]] = curr_object
+            
+            elif command == "SetScale":
+                if isinstance(curr_object, bpy.types.Object):
+                    curr_object.scale = params
+
+            elif command == "SetAttachOffset":
+                offset = [num / 212.77 for num in params]
+                if isinstance(curr_object, bpy.types.Object):
+                    curr_object.location = offset
+                elif isinstance(curr_object, bpy.types.EditBone):
+                    curr_object.matrix = Matrix.Translation(offset) @ curr_object.matrix
+            
+            elif command == "SetRotation":
+                if isinstance(curr_object, bpy.types.Object):
+                    curr_object.rotation_euler = params
+                elif isinstance(curr_object, bpy.types.EditBone):
+                    curr_object.matrix = Euler([math.radians(rot) for rot in params]).to_matrix().to_4x4() @ curr_object.matrix
+            
+            elif command == "SetSkinShape":
+                remove_empty_weights()
+                mesh_weights.setdefault(params, {})
+                curr_mesh = params
+
+                obj_name = [k for k, v in obj_id_map.items() if v == params]
+                if len(obj_name) == 0:
+                    continue
+                set_shape_pointer(curr_armature, objects[obj_name[0]])
+            
+            elif command == "AttachTo":
+                if params[1] == 1001:
+                    continue
+
+                bpy.ops.object.select_all(action='DESELECT')
+                if isinstance(curr_object, bpy.types.EditBone):
+                    armature = bone_armature_map[curr_object]
+                    select_object(armature)
+                    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+                    curr_object.select = True
+                    armature.data.edit_bones.active = curr_object
+                    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+                else:
+                    select_object(curr_object)
+                
+                other_obj = objects[params[1]]
+                
+                print("Attach %s to %s" % (curr_object, other_obj))
+                
+                if isinstance(other_obj, bpy.types.EditBone):
+                    armature = bone_armature_map[other_obj]
+                    select_object(armature)
+                    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+                    other_obj.select = True
+                    armature.data.edit_bones.active = other_obj
+                    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+                    bpy.ops.object.parent_set(type='BONE')
+                else:
+                    select_object(other_obj)
+                    bpy.ops.object.parent_set()
+    
+            elif command == "AttachNetToJoint":
+                remove_empty_weights()
+                curr_weights = mesh_weights[curr_mesh].setdefault(params[1], [])
+
+                select_object(curr_armature)
+                bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+                curr_bone_idx = params[1]
+                curr_bone = curr_armature.data.edit_bones.new("bone")
+                curr_bone.name = hex(params[1])
+                curr_bone.head = (0.0, 0.0, 0.0)
+                curr_bone.tail = (0.0, 0.5, 0.0)
+                curr_bone.matrix = Matrix.Identity(4)
+                bpy.ops.object.mode_set(mode='OBJECT')
+                curr_object = curr_bone
+
+                if params[1] in bone_id_map.keys():
+                    curr_bone.name = bone_id_map[params[1]]
+
+                print("Attach Net %s to Joint %s" % (curr_armature, curr_object))
+
+                objects[params[1]] = curr_bone
+                bone_armature_map[curr_bone] = curr_armature
+            
+            elif command == "SetSkinWeight":
+                curr_weights.append((params[0], params[1] / 100.0))
+        
+        remove_empty_weights()
+        
         for obj, id in obj_id_map.items():
             for name, weights in mesh_weights[id].items():
-                vert_group = objects[obj].vertex_groups.new(name = bone_id_map[name])
+                vert_group = objects[obj].vertex_groups.new(name=bone_id_map[name])
                 for index, weight in weights:
                     vert_group.add([index], weight, "REPLACE")
 
@@ -250,16 +345,22 @@ def execute(op, context):
 
     load_data_from_master_list(os.path.join(goddard_file_path, "dynlist_mario_master.c"), mario_objects)
 
+    bpy.ops.object.select_all(action='DESELECT')
     for name, obj in mario_objects.items():
-        obj.name = name
+        if not isinstance(obj, bpy.types.Object):
+            continue
+        obj.name = hex(name) if isinstance(name, int) else str(name)
+
+        if obj.parent == None:
+            select_object(obj)
 
     head = bpy.data.objects.new("Mario Head", None)
     head.empty_display_type = "SPHERE"
     head.empty_display_size = 2.2
     context.collection.objects.link(head)
-    head.select_set(True)
-    context.view_layer.objects.active = head
+    select_object(head)
     bpy.ops.object.parent_set()
+    head.rotation_euler = (math.radians(90.0), 0, 0)
 
     print(vertex_count)
 
