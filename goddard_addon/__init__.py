@@ -3,6 +3,8 @@ bl_info = {
     "author": "SI Silicon",
     "blender": (2, 90, 0),
     "location": "View3D > Goddard",
+    "wiki_url": "https://github.com/SIsilicon/Goddard-ImportExport-Project",
+    "tracker_url": "https://github.com/SIsilicon/Goddard-ImportExport-Project/issues",
     "category": "Object",
 }
 
