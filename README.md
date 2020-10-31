@@ -1,6 +1,6 @@
 # Goddard-ImportExport-Project
 
-![preview](doc_images\preview.png)
+![preview](doc_images/preview.png)
 
 Hello! This is a plugin that will help you edit Mario's Head in the title screen of Super Mario 64.
 This plugin is to be used with the sm64 decomp project, or any deriviation of it.
@@ -11,7 +11,7 @@ To get it up and running, just take the `goddard_addon` folder in this repo, and
 
 ## Usage
 
-![controls](doc_images\controls.png)
+![controls](doc_images/controls.png)
 
 As you can see, you'll find the controls here in the 3D viewport. It's quite simple really.
 
